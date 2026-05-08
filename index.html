@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2025 OSSC Plumbing Calculator</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-100">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
+
+        // --- DATA MODEL (Extracted from 2025 OSSC Table 2902.1) ---
+        const OCCUPANCIES = {
+          "A-1": {
+            label: "Assembly: A-1 (Theaters, Concert Halls, Motion Pictures)",
+            wcMale: { type: 'flat', ratio: 125 },
+            wcFemale: { type: 'flat', ratio: 65 },
+            lavMale: { type: 'flat', ratio: 200 },
+            lavFemale: { type: 'flat', ratio: 200 },
+            df: { type: 'flat', ratio: 500 },
+            isFood: false
+          },
+          "A-2_Nightclub": {
+            label: "Assembly: A-2 (Nightclubs, Bars, Taverns, Dance Halls)",
+            wcMale: { type: 'flat', ratio: 40 },
+            wcFemale: { type: 'flat', ratio: 40 },
+            lavMale: { type: 'flat', ratio: 75 },
+            lavFemale: { type: 'flat', ratio: 75 },
+            df: { type: 'flat', ratio: 500 },
+            isFood: true
+          },
+          "A-2_Rest": {
+            label: "Assembly: A-2 (Restaurants, Banquet Halls, Food Courts)",
+            wcMale: { type: 'flat', ratio: 75 },
+            wcFemale: { type: 'flat', ratio: 75 },
+            lavMale: { type: 'flat', ratio: 200 },
+            lavFemale: { type: 'flat', ratio: 200 },
+            df: { type: 'flat', ratio: 500 },
+            isFood: true
+          },
+          "A-3_General": {
+            label: "Assembly: A-3 (Auditoriums, Galleries, Museums, Gymnasiums)",
+            wcMale: { type: 'flat', ratio: 125 },
+            wcFemale: { type: 'flat', ratio: 65 },
+            lavMale: { type: 'flat', ratio: 200 },
+            lavFemale: { type: 'flat', ratio: 200 },
+            df: { type: 'flat', ratio: 500 },
+            isFood: false
+          },
+          "A-3_Terminals": {
+            label: "Assembly: A-3 (Passenger Terminals, Transportation Facilities)",
+            wcMale: { type: 'flat', ratio: 500 },
+            wcFemale: { type: 'flat', ratio: 500 },
+            lavMale: { type: 'flat', ratio: 750 },
+            lavFemale: { type: 'flat', ratio: 750 },
+            df: { type: 'flat', ratio: 1000 },
+            isFood: false
+          },
+          "A-3_Worship_Fixed": {
+            label: "Assembly: A-3 (Places of Worship with fixed seating)",
+            wcMale: { type: 'flat', ratio: 150 },
+            wcFemale: { type: 'flat', ratio: 75 },
+            lavMale: { type: 'flat', ratio: 200 },
+            lavFemale: { type: 'flat', ratio: 200 },
+            df: { type: 'flat', ratio: 1000 },
+            isFood: false
+          },
+          "A-3_Worship_NonFixed": {
+            label: "Assembly: A-3 (Places of Worship without fixed seating)",
+            wcMale: { type: 'flat', ratio: 125 },
+            wcFemale: { type: 'flat', ratio: 65 },
+            lavMale: { type: 'flat', ratio: 200 },
+            lavFemale: { type: 'flat', ratio: 200 },
+            df: { type: 'flat', ratio: 1000 },
+            isFood: false
+          },
+          "A-4_A-5": {
+            label: "Assembly: A-4, A-5 (Arenas, Stadiums, Amusement Parks)",
+            wcMale: { type: 'tiered', tiers: [{ limit: 1500, ratio: 75 }, { limit: Infinity, ratio: 120 }] },
+            wcFemale: { type: 'tiered', tiers: [{ limit: 1520, ratio: 40 }, { limit: Infinity, ratio: 60 }] },
+            lavMale: { type: 'flat', ratio: 200 },
+            lavFemale: { type: 'flat', ratio: 150 },
+            df: { type: 'flat', ratio: 500 },
+            isFood: false
+          },
+          "B": {
+            label: "Business: B (Offices, Banks, Light Industrial)",
+            wcMale: { type: 'tiered', tiers: [{ limit: 50, ratio: 25 }, { limit: Infinity, ratio: 50 }] },
+            wcFemale: { type: 'tiered', tiers: [{ limit: 50, ratio: 25 }, { limit: Infinity, ratio: 50 }] },
+            lavMale: { type: 'tiered', tiers: [{ limit: 80, ratio: 40 }, { limit: Infinity, ratio: 80 }] },
+            lavFemale: { type: 'tiered', tiers: [{ limit: 80, ratio: 40 }, { limit: Infinity, ratio: 80 }] },
+            df: { type: 'flat', ratio: 100 },
+            isFood: false
+          },
+          "B_Ambulatory": {
+            label: "Business: B (Ambulatory Care, Outpatient Clinics)",
+            wcMale: { type: 'tiered', tiers: [{ limit: 50, ratio: 25 }, { limit: Infinity, ratio: 50 }] },
+            wcFemale: { type: 'tiered', tiers: [{ limit: 50, ratio: 25 }, { limit: Infinity, ratio: 50 }] },
+            lavMale: { type: 'flat', ratio: 50 },
+            lavFemale: { type: 'flat', ratio: 50 },
+            df: { type: 'none', ratio: 0 },
+            isFood: false
+          },
+          "E": {
+            label: "Educational: E (Educational Facilities)",
+            wcMale: { type: 'flat', ratio: 50 },
+            wcFemale: { type: 'flat', ratio: 50 },
+            lavMale: { type: 'flat', ratio: 50 },
+            lavFemale: { type: 'flat', ratio: 50 },
+            df: { type: 'flat', ratio: 100 },
+            isFood: false
+          },
+          "F": {
+            label: "Factory: F-1, F-2 (Fabricating, Assembly, Processing)",
+            wcMale: { type: 'flat', ratio: 100 },
+            wcFemale: { type: 'flat', ratio: 100 },
+            lavMale: { type: 'flat', ratio: 100 },
+            lavFemale: { type: 'flat', ratio: 100 },
+            df: { type: 'flat', ratio: 400 },
+            isFood: false
+          },
+          "I_Daycare": {
+            label: "Institutional: Adult and Child Day Care (Group I-4 and E)",
+            wcMale: { type: 'flat', ratio: 15 },
+            wcFemale: { type: 'flat', ratio: 15 },
+            lavMale: { type: 'flat', ratio: 15 },
+            lavFemale: { type: 'flat', ratio: 15 },
+            df: { type: 'flat', ratio: 100 },
+            isFood: false
+          },
+          "I_Employees": {
+            label: "Institutional: I-1, I-2 (Employees Only)",
+            wcMale: { type: 'flat', ratio: 25 },
+            wcFemale: { type: 'flat', ratio: 25 },
+            lavMale: { type: 'flat', ratio: 35 },
+            lavFemale: { type: 'flat', ratio: 35 },
+            df: { type: 'none', ratio: 0 },
+            isFood: false
+          },
+          "M": {
+            label: "Mercantile: M (Retail Stores, Markets)",
+            wcMale: { type: 'flat', ratio: 500 },
+            wcFemale: { type: 'flat', ratio: 500 },
+            lavMale: { type: 'flat', ratio: 750 },
+            lavFemale: { type: 'flat', ratio: 750 },
+            df: { type: 'flat', ratio: 1000 },
+            isFood: false
+          },
+          "R-2_Dorm": {
+            label: "Residential: R-2 (Dormitories, Fraternities, Sororities)",
+            wcMale: { type: 'flat', ratio: 10 },
+            wcFemale: { type: 'flat', ratio: 10 },
+            lavMale: { type: 'flat', ratio: 10 },
+            lavFemale: { type: 'flat', ratio: 10 },
+            df: { type: 'flat', ratio: 100 },
+            isFood: false
+          },
+          "S": {
+            label: "Storage: S-1, S-2 (Warehouses, Freight Depots)",
+            wcMale: { type: 'flat', ratio: 100 },
+            wcFemale: { type: 'flat', ratio: 100 },
+            lavMale: { type: 'flat', ratio: 100 },
+            lavFemale: { type: 'flat', ratio: 100 },
+            df: { type: 'flat', ratio: 1000 },
+            isFood: false
+          }
+        };
+
+        const getGroups = () => {
+          const groups = {};
+          Object.entries(OCCUPANCIES).forEach(([key, val]) => {
+            const groupName = val.label.split(':')[0]; 
+            if (!groups[groupName]) groups[groupName] = [];
+            groups[groupName].push({ key, label: val.label.split(': ')[1] });
+          });
+          return groups;
+        };
+
+        // --- HELPER FUNCTIONS ---
+        const calcFixtures = (load, rule) => {
+          if (!rule || rule.type === 'none') return 0;
+          if (rule.type === 'flat') return load / rule.ratio;
+          if (rule.type === 'tiered') {
+            let total = 0;
+            let remaining = load;
+            for (let i = 0; i < rule.tiers.length; i++) {
+              const tier = rule.tiers[i];
+              const applicable = tier.limit === Infinity ? remaining : Math.min(remaining, tier.limit);
+              if (applicable > 0) {
+                total += applicable / tier.ratio;
+                remaining -= applicable;
+              }
+            }
+            return total;
+          }
+          return 0;
+        };
+
+        const formatRule = (rule, isFoodForDF = false) => {
+          if (isFoodForDF) return 'Exempt (Note e)';
+          if (!rule || rule.type === 'none') return 'Not Required';
+          if (rule.type === 'flat') return `1 per ${rule.ratio}`;
+          if (rule.type === 'tiered') {
+            return rule.tiers.map((t) => {
+              if (t.limit === Infinity) return `1 per ${t.ratio} rem.`;
+              return `1 per ${t.ratio} first ${t.limit}`;
+            }).join('; ');
+          }
+          return '-';
+        };
+
+        const getCalculatedSpace = (space) => {
+          const rules = OCCUPANCIES[space.type];
+          const maleLoad = space.load / 2;
+          const femaleLoad = space.load / 2;
+          return {
+            ...space,
+            rules,
+            maleLoad,
+            femaleLoad,
+            req: {
+              mWC: calcFixtures(maleLoad, rules.wcMale),
+              fWC: calcFixtures(femaleLoad, rules.wcFemale),
+              mLav: calcFixtures(maleLoad, rules.lavMale),
+              fLav: calcFixtures(femaleLoad, rules.lavFemale),
+              df: rules.isFood ? 0 : calcFixtures(space.load, rules.df) // Ensure 0 if food exempt
+            }
+          };
+        };
+
+        const BreakdownCard = ({ space }) => {
+          const [isOpen, setIsOpen] = useState(true);
+          const s = getCalculatedSpace(space);
+
+          return (
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-4">
+              <div 
+                className="bg-slate-800 text-white p-3 px-4 flex justify-between items-center cursor-pointer select-none hover:bg-slate-700 transition-colors"
+                onClick={() => setIsOpen(!isOpen)}
+              >
+                <div className="flex-1 min-w-0 pr-4">
+                  <h3 className="font-semibold text-sm truncate" title={s.rules.label}>{s.rules.label}</h3>
+                  <div className="text-xs text-slate-300 mt-0.5">Total Load: {s.load}</div>
+                </div>
+                <div className="text-slate-400 flex-shrink-0">
+                  {isOpen ? '▲' : '▼'}
+                </div>
+              </div>
+              
+              {isOpen && (
+                <div className="p-4 space-y-4 text-sm">
+                  {/* Water Closets */}
+                  <div>
+                    <div className="font-bold text-slate-700 mb-1 border-b pb-1">Water Closets</div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <span className="text-xs text-slate-500 block mb-0.5">Male ({s.maleLoad} load)</span>
+                        <div className="font-mono bg-slate-50 p-1 rounded text-xs mb-1 text-slate-600">{formatRule(s.rules.wcMale)}</div>
+                        <div className="font-semibold text-blue-600">{s.req.mWC.toFixed(2)}</div>
+                      </div>
+                      <div>
+                        <span className="text-xs text-slate-500 block mb-0.5">Female ({s.femaleLoad} load)</span>
+                        <div className="font-mono bg-slate-50 p-1 rounded text-xs mb-1 text-slate-600">{formatRule(s.rules.wcFemale)}</div>
+                        <div className="font-semibold text-blue-600">{s.req.fWC.toFixed(2)}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Lavatories */}
+                  <div>
+                    <div className="font-bold text-slate-700 mb-1 border-b pb-1">Lavatories</div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <span className="text-xs text-slate-500 block mb-0.5">Male ({s.maleLoad} load)</span>
+                        <div className="font-mono bg-slate-50 p-1 rounded text-xs mb-1 text-slate-600">{formatRule(s.rules.lavMale)}</div>
+                        <div className="font-semibold text-teal-600">{s.req.mLav.toFixed(2)}</div>
+                      </div>
+                      <div>
+                        <span className="text-xs text-slate-500 block mb-0.5">Female ({s.femaleLoad} load)</span>
+                        <div className="font-mono bg-slate-50 p-1 rounded text-xs mb-1 text-slate-600">{formatRule(s.rules.lavFemale)}</div>
+                        <div className="font-semibold text-teal-600">{s.req.fLav.toFixed(2)}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Drinking Fountains */}
+                  <div>
+                    <div className="font-bold text-slate-700 mb-1 border-b pb-1">Drinking Fountains</div>
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <span className="text-xs text-slate-500 block mb-0.5">Total ({s.load} load)</span>
+                        <div className="font-mono bg-slate-50 p-1 rounded text-xs mb-1 text-slate-600">{formatRule(s.rules.df, s.rules.isFood)}</div>
+                        <div className="font-semibold text-indigo-600">{s.rules.isFood || s.rules.df.type === 'none' ? '-' : s.req.df.toFixed(2)}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        };
+
+        function App() {
+          const [spaces, setSpaces] = useState([]);
+          const [selectedType, setSelectedType] = useState("A-1");
+          const [occupantLoad, setOccupantLoad] = useState("");
+          const [useUnisex, setUseUnisex] = useState(false);
+          const [proposed, setProposed] = useState({ mWC: 0, fWC: 0, mLav: 0, fLav: 0, df: 0, uWC: 0, uLav: 0 });
+          const [forceShowDF, setForceShowDF] = useState(false);
+          const [confirmModal, setConfirmModal] = useState({ isOpen: false, pendingType: null, pendingLoad: null });
+
+          const groupedOptions = useMemo(() => getGroups(), []);
+
+          const handleAddSpace = (e) => {
+            e.preventDefault();
+            if (!occupantLoad || isNaN(occupantLoad) || Number(occupantLoad) <= 0) return;
+            
+            const hasDuplicate = spaces.some(s => s.type === selectedType);
+            if (hasDuplicate) {
+              setConfirmModal({ isOpen: true, pendingType: selectedType, pendingLoad: occupantLoad });
+            } else {
+              commitAddSpace(selectedType, occupantLoad);
+            }
+          };
+
+          const commitAddSpace = (type, load) => {
+            setSpaces([...spaces, {
+              id: Date.now().toString(),
+              type: type,
+              load: Number(load)
+            }]);
+            setOccupantLoad("");
+            setConfirmModal({ isOpen: false, pendingType: null, pendingLoad: null });
+          };
+
+          const handleRemoveSpace = (id) => {
+            setSpaces(spaces.filter(s => s.id !== id));
+          };
+
+          const handleUpdateSpaceLoad = (id, newLoad) => {
+            const loadNum = parseInt(newLoad, 10);
+            setSpaces(spaces.map(s => s.id === id ? { ...s, load: isNaN(loadNum) ? "" : loadNum } : s));
+          };
+
+          const handleProposedChange = (field, value) => {
+            const num = parseInt(value, 10) || 0;
+            setProposed(prev => ({ ...prev, [field]: num }));
+          };
+
+          const totals = useMemo(() => {
+            let mWC = 0, fWC = 0, mLav = 0, fLav = 0, df = 0;
+            let isExemptDF = false;
+            let exemptTriggers = [];
+
+            spaces.forEach(s => {
+              if (!s.load) return; 
+              const calc = getCalculatedSpace(s).req;
+              mWC += calc.mWC;
+              fWC += calc.fWC;
+              mLav += calc.mLav;
+              fLav += calc.fLav;
+              df += calc.df; // This is safely 0 for food establishments due to updated helper function
+              
+              if (OCCUPANCIES[s.type].isFood) {
+                isExemptDF = true;
+                const shortName = OCCUPANCIES[s.type].label.split(' (')[0];
+                if (!exemptTriggers.includes(shortName)) {
+                    exemptTriggers.push(shortName);
+                }
+              }
+            });
+
+            return {
+              mWC: Math.ceil(mWC),
+              fWC: Math.ceil(fWC),
+              mLav: Math.ceil(mLav),
+              fLav: Math.ceil(fLav),
+              df: Math.ceil(df), 
+              isExemptDF,
+              exemptTriggers
+            };
+          }, [spaces]);
+
+          useEffect(() => {
+            setProposed(prev => ({
+              ...prev,
+              mWC: totals.mWC,
+              fWC: totals.fWC,
+              mLav: totals.mLav,
+              fLav: totals.fLav,
+              df: totals.df,
+              uWC: 0,
+              uLav: 0
+            }));
+          }, [totals]);
+
+          return (
+            <div className="flex flex-col lg:flex-row h-screen bg-slate-100 text-slate-800 font-sans overflow-hidden">
+              
+              {/* COLUMN 1: INPUT */}
+              <div className="w-full lg:w-[320px] bg-white border-r border-slate-200 flex flex-col shadow-sm z-10">
+                <div className="p-5 border-b border-slate-200 bg-slate-50">
+                  <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    Occupancy Class
+                  </h1>
+                  <p className="text-xs text-slate-500 mt-1">Add spaces to begin your calculation.</p>
+                </div>
+                
+                <div className="p-5 overflow-y-auto flex-1">
+                  <form onSubmit={handleAddSpace} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-semibold mb-1 text-slate-700">Classification</label>
+                      <select 
+                        value={selectedType}
+                        onChange={(e) => setSelectedType(e.target.value)}
+                        className="w-full p-2.5 border border-slate-300 rounded-lg bg-slate-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm truncate"
+                      >
+                        {Object.entries(groupedOptions).map(([group, options]) => (
+                          <optgroup key={group} label={group}>
+                            {options.map(opt => (
+                              <option key={opt.key} value={opt.key}>{opt.label}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-semibold mb-1 text-slate-700">Total Occupant Load</label>
+                      <input 
+                        type="number"
+                        min="1"
+                        value={occupantLoad}
+                        onChange={(e) => setOccupantLoad(e.target.value)}
+                        className="w-full p-2.5 border border-slate-300 rounded-lg bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                        placeholder="e.g. 150"
+                      />
+                    </div>
+
+                    <button 
+                      type="submit" 
+                      disabled={!occupantLoad}
+                      className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg transition-colors"
+                    >
+                      Add Space
+                    </button>
+                  </form>
+
+                  {spaces.length > 0 && (
+                    <div className="mt-8 border-t border-slate-200 pt-6">
+                      <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Added Spaces</h3>
+                      <div className="space-y-2">
+                        {spaces.map((s, i) => (
+                          <div key={s.id} className="relative p-3 bg-slate-50 rounded-lg border border-slate-200 group">
+                            <button 
+                              onClick={() => handleRemoveSpace(s.id)}
+                              className="absolute top-1.5 right-1.5 text-slate-400 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Remove"
+                            >
+                              ✕
+                            </button>
+                            <div className="pr-6">
+                              <div className="font-semibold text-sm text-slate-800">{OCCUPANCIES[s.type].label.split(': ')[1]}</div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-xs text-slate-500">Load:</span>
+                                <input 
+                                  type="number" 
+                                  min="1" 
+                                  value={s.load} 
+                                  onChange={(e) => handleUpdateSpaceLoad(s.id, e.target.value)}
+                                  className="w-16 p-1 text-xs border border-slate-300 rounded outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                />
+                                <span className="text-xs text-slate-400 whitespace-nowrap">(M:{(s.load/2) || 0} / F:{(s.load/2) || 0})</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* COLUMN 2: BREAKDOWN */}
+              <div className="w-full lg:w-[400px] bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden">
+                <div className="p-5 border-b border-slate-200 bg-white shadow-sm z-10">
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    Detailed Breakdown
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-1">Raw unrounded decimal calculations.</p>
+                </div>
+                
+                <div className="p-5 overflow-y-auto flex-1 space-y-4">
+                  {spaces.length === 0 ? (
+                    <div className="text-center p-10 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
+                      Add a space to see the breakdown.
+                    </div>
+                  ) : (
+                    spaces.map((space) => (
+                      <BreakdownCard key={space.id} space={space} />
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* COLUMN 3: SUMMARY & PROPOSED */}
+              <div className="flex-1 bg-white flex flex-col overflow-hidden">
+                <div className="p-5 border-b border-slate-200 bg-slate-50 shadow-sm z-10 flex justify-between items-center">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                      Summary & Compliance
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1">Final required counts (rounded up) vs proposed.</p>
+                  </div>
+                </div>
+
+                <div className="p-5 overflow-y-auto flex-1">
+                  {spaces.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-slate-400">
+                      Complete steps 1 and 2 to view compliance matrix.
+                    </div>
+                  ) : (
+                    <div className="max-w-3xl mx-auto border border-slate-200 rounded-xl shadow-sm overflow-hidden bg-white text-sm mb-10">
+                      
+                      {/* TABLE HEADER */}
+                      <div className="grid grid-cols-12 bg-slate-100 border-b border-slate-200 font-bold text-slate-600 uppercase text-xs tracking-wider">
+                        <div className="col-span-5 p-3">Fixture Type</div>
+                        <div className="col-span-2 p-3 text-center border-l border-slate-200">Required</div>
+                        <div className="col-span-3 p-3 text-center border-l border-slate-200">Proposed</div>
+                        <div className="col-span-2 p-3 text-center border-l border-slate-200">Balance</div>
+                      </div>
+
+                      {/* WATER CLOSETS SECTION */}
+                      <div className="bg-blue-50/50 border-b border-slate-200 p-2 px-3 flex justify-between items-center">
+                        <span className="font-bold text-slate-800 text-sm">Water Closets</span>
+                        <label className="flex items-center gap-2 cursor-pointer bg-white/50 border border-slate-200 px-2 py-1 rounded shadow-sm hover:bg-white transition-colors">
+                          <input 
+                            type="checkbox" 
+                            checked={useUnisex} 
+                            onChange={(e) => setUseUnisex(e.target.checked)}
+                            className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                          />
+                          <span className="text-xs font-semibold text-slate-700">Unisex Override</span>
+                        </label>
+                      </div>
+                      
+                      <div className="grid grid-cols-12 border-b border-slate-100 items-center hover:bg-slate-50">
+                        <div className="col-span-5 p-3 pl-6 text-slate-600">Male</div>
+                        <div className="col-span-2 p-3 text-center font-bold text-base">{totals.mWC}</div>
+                        <div className="col-span-3 p-2 border-l border-slate-100">
+                          <input type="number" min="0" value={proposed.mWC} onChange={(e) => handleProposedChange('mWC', e.target.value)} className="w-full text-center border rounded p-1.5 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400" />
+                        </div>
+                        <div className={`col-span-2 p-3 text-center font-bold border-l border-slate-100 ${!useUnisex && proposed.mWC - totals.mWC < 0 ? 'text-red-500' : (!useUnisex ? 'text-green-600' : 'text-slate-400')}`}>
+                          {!useUnisex ? (proposed.mWC - totals.mWC >= 0 ? `+${proposed.mWC - totals.mWC}` : proposed.mWC - totals.mWC) : '-'}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-12 border-b border-slate-100 items-center hover:bg-slate-50">
+                        <div className="col-span-5 p-3 pl-6 text-slate-600">Female</div>
+                        <div className="col-span-2 p-3 text-center font-bold text-base">{totals.fWC}</div>
+                        <div className="col-span-3 p-2 border-l border-slate-100">
+                          <input type="number" min="0" value={proposed.fWC} onChange={(e) => handleProposedChange('fWC', e.target.value)} className="w-full text-center border rounded p-1.5 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400" />
+                        </div>
+                        <div className={`col-span-2 p-3 text-center font-bold border-l border-slate-100 ${!useUnisex && proposed.fWC - totals.fWC < 0 ? 'text-red-500' : (!useUnisex ? 'text-green-600' : 'text-slate-400')}`}>
+                          {!useUnisex ? (proposed.fWC - totals.fWC >= 0 ? `+${proposed.fWC - totals.fWC}` : proposed.fWC - totals.fWC) : '-'}
+                        </div>
+                      </div>
+
+                      {useUnisex && (
+                        <div className="grid grid-cols-12 border-b border-slate-200 items-center bg-yellow-50/30">
+                          <div className="col-span-5 p-3 pl-6 text-slate-600 font-medium">Unisex Override</div>
+                          <div className="col-span-2 p-3 text-center text-slate-400">—</div>
+                          <div className="col-span-3 p-2 border-l border-slate-200">
+                            <input type="number" min="0" value={proposed.uWC} onChange={(e) => handleProposedChange('uWC', e.target.value)} className="w-full text-center border-yellow-300 border rounded p-1.5 outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 bg-yellow-50" />
+                          </div>
+                          <div className="col-span-2 p-3 text-center border-l border-slate-200"></div>
+                        </div>
+                      )}
+
+                      {useUnisex && (() => {
+                        const totalReqWC = totals.mWC + totals.fWC;
+                        const totalPropWC = proposed.mWC + proposed.fWC + (proposed.uWC * 2);
+                        const wcBalance = totalPropWC - totalReqWC;
+                        return (
+                          <div className="grid grid-cols-12 border-b-2 border-slate-200 items-center bg-slate-50 font-bold">
+                            <div className="col-span-5 p-3 text-right text-slate-700">WC Balance:</div>
+                            <div className="col-span-2 p-3 text-center text-slate-500">{totalReqWC}</div>
+                            <div className="col-span-3 p-3 text-center border-l border-slate-200">{proposed.mWC + proposed.fWC} <span className="text-xs text-slate-400 font-normal">(+{proposed.uWC} U)</span></div>
+                            <div className={`col-span-2 p-3 text-center border-l border-slate-200 ${wcBalance < 0 ? 'text-red-500' : 'text-green-600'}`}>
+                              {wcBalance >= 0 ? `+${wcBalance}` : wcBalance}
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* LAVATORIES SECTION */}
+                      <div className="bg-teal-50/50 border-b border-slate-200 p-2 px-3 font-bold text-slate-800 text-sm mt-4">Lavatories</div>
+                      
+                      <div className="grid grid-cols-12 border-b border-slate-100 items-center hover:bg-slate-50">
+                        <div className="col-span-5 p-3 pl-6 text-slate-600">Male</div>
+                        <div className="col-span-2 p-3 text-center font-bold text-base">{totals.mLav}</div>
+                        <div className="col-span-3 p-2 border-l border-slate-100">
+                          <input type="number" min="0" value={proposed.mLav} onChange={(e) => handleProposedChange('mLav', e.target.value)} className="w-full text-center border rounded p-1.5 outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400" />
+                        </div>
+                        <div className={`col-span-2 p-3 text-center font-bold border-l border-slate-100 ${!useUnisex && proposed.mLav - totals.mLav < 0 ? 'text-red-500' : (!useUnisex ? 'text-green-600' : 'text-slate-400')}`}>
+                          {!useUnisex ? (proposed.mLav - totals.mLav >= 0 ? `+${proposed.mLav - totals.mLav}` : proposed.mLav - totals.mLav) : '-'}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-12 border-b border-slate-100 items-center hover:bg-slate-50">
+                        <div className="col-span-5 p-3 pl-6 text-slate-600">Female</div>
+                        <div className="col-span-2 p-3 text-center font-bold text-base">{totals.fLav}</div>
+                        <div className="col-span-3 p-2 border-l border-slate-100">
+                          <input type="number" min="0" value={proposed.fLav} onChange={(e) => handleProposedChange('fLav', e.target.value)} className="w-full text-center border rounded p-1.5 outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400" />
+                        </div>
+                        <div className={`col-span-2 p-3 text-center font-bold border-l border-slate-100 ${!useUnisex && proposed.fLav - totals.fLav < 0 ? 'text-red-500' : (!useUnisex ? 'text-green-600' : 'text-slate-400')}`}>
+                          {!useUnisex ? (proposed.fLav - totals.fLav >= 0 ? `+${proposed.fLav - totals.fLav}` : proposed.fLav - totals.fLav) : '-'}
+                        </div>
+                      </div>
+
+                      {useUnisex && (
+                        <div className="grid grid-cols-12 border-b border-slate-200 items-center bg-yellow-50/30">
+                          <div className="col-span-5 p-3 pl-6 text-slate-600 font-medium">Unisex Override</div>
+                          <div className="col-span-2 p-3 text-center text-slate-400">—</div>
+                          <div className="col-span-3 p-2 border-l border-slate-200">
+                            <input type="number" min="0" value={proposed.uLav} onChange={(e) => handleProposedChange('uLav', e.target.value)} className="w-full text-center border-yellow-300 border rounded p-1.5 outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 bg-yellow-50" />
+                          </div>
+                          <div className="col-span-2 p-3 text-center border-l border-slate-200"></div>
+                        </div>
+                      )}
+
+                      {useUnisex && (() => {
+                        const totalReqLav = totals.mLav + totals.fLav;
+                        const totalPropLav = proposed.mLav + proposed.fLav + (proposed.uLav * 2);
+                        const lavBalance = totalPropLav - totalReqLav;
+                        return (
+                          <div className="grid grid-cols-12 border-b-2 border-slate-200 items-center bg-slate-50 font-bold">
+                            <div className="col-span-5 p-3 text-right text-slate-700">Lav Balance:</div>
+                            <div className="col-span-2 p-3 text-center text-slate-500">{totalReqLav}</div>
+                            <div className="col-span-3 p-3 text-center border-l border-slate-200">{proposed.mLav + proposed.fLav} <span className="text-xs text-slate-400 font-normal">(+{proposed.uLav} U)</span></div>
+                            <div className={`col-span-2 p-3 text-center border-l border-slate-200 ${lavBalance < 0 ? 'text-red-500' : 'text-green-600'}`}>
+                              {lavBalance >= 0 ? `+${lavBalance}` : lavBalance}
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* DRINKING FOUNTAINS SECTION */}
+                      {(!totals.isExemptDF || forceShowDF || totals.df > 0) && (
+                        <>
+                          <div className="bg-indigo-50/50 border-b border-slate-200 p-2 px-3 font-bold text-slate-800 text-sm mt-4">Drinking Fountains</div>
+                          
+                          <div className="grid grid-cols-12 border-b border-slate-200 items-center hover:bg-slate-50">
+                            <div className="col-span-5 p-3 pl-6 text-slate-600">Total Fountains</div>
+                            <div className="col-span-2 p-3 text-center font-bold text-base">{totals.df}</div>
+                            <div className="col-span-3 p-2 border-l border-slate-100">
+                              <input type="number" min="0" value={proposed.df} onChange={(e) => handleProposedChange('df', e.target.value)} className="w-full text-center border rounded p-1.5 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400" />
+                            </div>
+                            <div className={`col-span-2 p-3 text-center font-bold border-l border-slate-100 ${proposed.df - totals.df < 0 ? 'text-red-500' : 'text-green-600'}`}>
+                              {proposed.df - totals.df >= 0 ? `+${proposed.df - totals.df}` : proposed.df - totals.df}
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      {totals.isExemptDF && (
+                        <div className="m-4 p-4 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800">
+                          <div className="font-bold flex items-center gap-2 mb-1">
+                            <span className="text-blue-600">ℹ️</span> Drinking Fountain Exemption
+                          </div>
+                          <p className="text-blue-700">
+                            Per footnote 'e', drinking fountains are not required in drinking or dining establishments. The DF requirements for these spaces have been excluded from the total [{totals.exemptTriggers.join(', ')}].
+                          </p>
+                          {!forceShowDF && totals.df === 0 && (
+                            <button 
+                              onClick={() => setForceShowDF(true)}
+                              className="mt-2 text-blue-600 hover:text-blue-800 font-semibold underline decoration-blue-300 underline-offset-2 transition-colors"
+                            >
+                              Manually add proposed fountains
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* CONFIRMATION MODAL */}
+              {confirmModal.isOpen && (
+                <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full">
+                    <h3 className="font-bold text-lg text-slate-800 mb-2">Duplicate Occupancy Type</h3>
+                    <p className="text-slate-600 text-sm mb-6">
+                      A space of type "{OCCUPANCIES[confirmModal.pendingType]?.label.split(':')[0]}" has already been added. Are you sure you want to add another space of this type?
+                    </p>
+                    <div className="flex justify-end gap-3">
+                      <button 
+                        onClick={() => setConfirmModal({ isOpen: false, pendingType: null, pendingLoad: null })}
+                        className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        onClick={() => commitAddSpace(confirmModal.pendingType, confirmModal.pendingLoad)}
+                        className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                      >
+                        Add Space
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
