@@ -318,6 +318,9 @@
           const [proposed, setProposed] = useState({ mWC: 0, fWC: 0, mLav: 0, fLav: 0, df: 0, uWC: 0, uLav: 0 });
           const [forceShowDF, setForceShowDF] = useState(false);
           const [confirmModal, setConfirmModal] = useState({ isOpen: false, pendingType: null, pendingLoad: null });
+          const [col1Width, setCol1Width] = useState(320);
+          const [col2Width, setCol2Width] = useState(400);
+          const [isDragging, setIsDragging] = useState(null);
 
           const groupedOptions = useMemo(() => getGroups(), []);
 
@@ -404,11 +407,83 @@
             }));
           }, [totals]);
 
+          useEffect(() => {
+            const handleMouseMove = (e) => {
+              if (isDragging === 'col1') {
+                setCol1Width(Math.max(250, Math.min(e.clientX, window.innerWidth - col2Width - 100)));
+              } else if (isDragging === 'col2') {
+                const newWidth = e.clientX - col1Width;
+                setCol2Width(Math.max(300, Math.min(newWidth, window.innerWidth - col1Width - 100)));
+              }
+            };
+
+            const handleMouseUp = () => {
+              if (isDragging) setIsDragging(null);
+            };
+
+            if (isDragging) {
+              document.addEventListener('mousemove', handleMouseMove);
+              document.addEventListener('mouseup', handleMouseUp);
+              document.body.style.userSelect = 'none';
+            } else {
+              document.body.style.userSelect = '';
+            }
+
+            return () => {
+              document.removeEventListener('mousemove', handleMouseMove);
+              document.removeEventListener('mouseup', handleMouseUp);
+            };
+          }, [isDragging, col1Width, col2Width]);
+
+          const handleExport = () => {
+            let csv = "Space,Occupant Load,WC Ratio (Male),WC Ratio (Female),Lav Ratio (Male),Lav Ratio (Female),DF Ratio,Req WC (Male) Rough,Req WC (Female) Rough,Req Lav (Male) Rough,Req Lav (Female) Rough,Req DF Rough\n";
+
+            let roughTotals = { mWC: 0, fWC: 0, mLav: 0, fLav: 0, df: 0 };
+
+            spaces.forEach(space => {
+              const s = getCalculatedSpace(space);
+              const r = s.req;
+              const dfReq = s.rules.isFood || s.rules.df.type === 'none' ? 0 : r.df;
+
+              csv += `"${s.rules.label}",${s.load},`;
+              csv += `"${formatRule(s.rules.wcMale)}","${formatRule(s.rules.wcFemale)}",`;
+              csv += `"${formatRule(s.rules.lavMale)}","${formatRule(s.rules.lavFemale)}",`;
+              csv += `"${formatRule(s.rules.df, s.rules.isFood)}",`;
+              csv += `${r.mWC.toFixed(2)},${r.fWC.toFixed(2)},${r.mLav.toFixed(2)},${r.fLav.toFixed(2)},${dfReq.toFixed(2)}\n`;
+
+              roughTotals.mWC += r.mWC;
+              roughTotals.fWC += r.fWC;
+              roughTotals.mLav += r.mLav;
+              roughTotals.fLav += r.fLav;
+              roughTotals.df += dfReq;
+            });
+
+            csv += `\nROUGH TOTALS,-,-,-,-,-,-,${roughTotals.mWC.toFixed(2)},${roughTotals.fWC.toFixed(2)},${roughTotals.mLav.toFixed(2)},${roughTotals.fLav.toFixed(2)},${roughTotals.df.toFixed(2)}\n`;
+            csv += `REQUIRED (ROUNDED UP),-,-,-,-,-,-,${totals.mWC},${totals.fWC},${totals.mLav},${totals.fLav},${totals.df}\n`;
+            csv += `PROPOSED,-,-,-,-,-,-,${proposed.mWC},${proposed.fWC},${proposed.mLav},${proposed.fLav},${proposed.df}\n`;
+            
+            if (useUnisex) {
+              csv += `PROPOSED UNISEX OVERRIDE,-,-,-,-,-,-,${proposed.uWC} (U),${proposed.uWC} (U),${proposed.uLav} (U),${proposed.uLav} (U),-\n`;
+            }
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'plumbing_calc_export.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          };
+
           return (
-            <div className="flex flex-col lg:flex-row h-screen bg-slate-100 text-slate-800 font-sans overflow-hidden">
+            <div 
+              className={`flex flex-col lg:flex-row h-screen bg-slate-100 text-slate-800 font-sans overflow-hidden ${isDragging ? 'cursor-col-resize' : ''}`}
+              style={{ '--col1-w': `${col1Width}px`, '--col2-w': `${col2Width}px` }}
+            >
               
               {/* COLUMN 1: INPUT */}
-              <div className="w-full lg:w-[320px] bg-white border-r border-slate-200 flex flex-col shadow-sm z-10">
+              <div className="w-full lg:w-[var(--col1-w)] lg:shrink-0 bg-white border-r border-slate-200 flex flex-col shadow-sm z-10">
                 <div className="p-5 border-b border-slate-200 bg-slate-50">
                   <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                     Occupancy Class
@@ -458,7 +533,12 @@
 
                   {spaces.length > 0 && (
                     <div className="mt-8 border-t border-slate-200 pt-6">
-                      <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Added Spaces</h3>
+                      <div className="flex justify-between items-end mb-3">
+                        <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Added Spaces</h3>
+                        <div className="text-xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-1 rounded">
+                          Total Load: {spaces.reduce((sum, s) => sum + (Number(s.load) || 0), 0)}
+                        </div>
+                      </div>
                       <div className="space-y-2">
                         {spaces.map((s, i) => (
                           <div key={s.id} className="relative p-3 bg-slate-50 rounded-lg border border-slate-200 group">
@@ -491,8 +571,14 @@
                 </div>
               </div>
 
+              {/* RESIZER 1 */}
+              <div 
+                className="hidden lg:block w-1.5 hover:bg-blue-400 bg-slate-200 cursor-col-resize z-20 shrink-0 transition-colors" 
+                onMouseDown={() => setIsDragging('col1')} 
+              />
+
               {/* COLUMN 2: BREAKDOWN */}
-              <div className="w-full lg:w-[400px] bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden">
+              <div className="w-full lg:w-[var(--col2-w)] lg:shrink-0 bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden">
                 <div className="p-5 border-b border-slate-200 bg-white shadow-sm z-10">
                   <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                     Detailed Breakdown
@@ -513,6 +599,12 @@
                 </div>
               </div>
 
+              {/* RESIZER 2 */}
+              <div 
+                className="hidden lg:block w-1.5 hover:bg-blue-400 bg-slate-200 cursor-col-resize z-20 shrink-0 transition-colors" 
+                onMouseDown={() => setIsDragging('col2')} 
+              />
+
               {/* COLUMN 3: SUMMARY & PROPOSED */}
               <div className="flex-1 bg-white flex flex-col overflow-hidden">
                 <div className="p-5 border-b border-slate-200 bg-slate-50 shadow-sm z-10 flex justify-between items-center">
@@ -522,6 +614,14 @@
                     </h2>
                     <p className="text-xs text-slate-500 mt-1">Final required counts (rounded up) vs proposed.</p>
                   </div>
+                  <button 
+                    onClick={handleExport}
+                    disabled={spaces.length === 0}
+                    className="flex items-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-semibold py-1.5 px-3 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Export CSV
+                  </button>
                 </div>
 
                 <div className="p-5 overflow-y-auto flex-1">
