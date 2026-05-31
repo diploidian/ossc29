@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Command">
+    <Name>Plumbing Fixture Calculator</Name>
+    <Assembly>C:\Coding\Projects\Plumbing Fixture Calculator\ProxyLoader\bin\Debug\ProxyLoader.dll</Assembly>
+    <AddInId>9f9f2b2a-4cda-4d2b-8c3f-1a2b3c4d5e6f</AddInId>
+    <FullClassName>ProxyLoader.Command</FullClassName>
+    <VendorId>diploidian</VendorId>
+    <VendorDescription>diploidian</VendorDescription>
+  </AddIn>
+</RevitAddIns>
